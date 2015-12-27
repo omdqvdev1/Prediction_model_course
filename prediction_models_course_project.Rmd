@@ -1,0 +1,214 @@
+# Prediction model for Weight Lifting Exercise Dataset
+
+### Executive summary
+
+We consider __Weight Lifting Exercise Dataset__ data set and try to predict manner in which the exercises have been done (*classe* variable). For that goal we consider the provided training dataset and split it on training and test parts in order to build and evaluate our model.
+For the prediction we applied randomForest algorithm with most important variables, and gained more than 99% out-of-sample error on the test data set.
+Finally we applied our model for the prediction of the *classe* for the 20 data samples.  
+
+
+__Background data__
+
+In this work, we will use data for "Weight Lifting Exercise Dataset" taken from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+__Data__
+
+The training data for this project is available here: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv]
+
+The test data is available here: 
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv]
+
+__Goal__
+
+The goal here is to predict the manner in which the above exercises have been done. This is the "classe" variable in the training data set. Finally, the trained model will be used to predict classe value for the 20 samples in the test data set.
+
+__Data load and preparation__
+
+For the prediction model selection and validation we will be using the supplied training data set.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(knitr)
+library(caret)
+library(randomForest)
+```
+
+```{r prepare_data, message=FALSE, warning=FALSE}
+training <- read.csv("pml-training.csv", na.strings = c("NA",""))
+```
+
+First observation of data shows that there are fields with more than 90% of missed values, so that the fields shall be excluded from further consideration as they become useless for classifiying most of the data samples. 
+Also, variables with near zero variance will be excluded, as well as variables *X, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, num_window* which are additional attributes inherent to the measurement process itself. 
+
+```{r message=FALSE, warning=FALSE} 
+subtrain <- training[, -which(apply(training, 2, FUN=function(x) sum(is.na(x))/length(x) > 0.9))]
+subtrain <- subset(subtrain,select= -c(X,raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, num_window))
+subtrain <- subtrain[,-nearZeroVar(subtrain)]
+```
+
+### Build prediction model
+
+In order to build and validate our prediction model, we will be splitting our trainig data on training and testing subsets in proportion 70% for traing and 30% for the testing.
+
+```{r echo=FALSE}
+set.seed(13579)
+```
+
+```{r message=FALSE, warning=FALSE}
+trainindex <- createDataPartition(y=subtrain$classe, p=0.7, list=FALSE)
+trainset <- subtrain[trainindex, ]
+testset <- subtrain[-trainindex, ]
+```
+
+__Exploratory analysis__
+
+```{r fig.width = 6, fig.height = 6}
+plot(trainset$classe, col="grey", main="Balance of the classe levels", xlab="classe levels", ylab="Frequency")
+```
+
+All the picture looks slightly unbalanced with the classe A having more observations.
+
+```{r mulitplot, echo=FALSE, message=FALSE}
+## the following function was grabbed from Cookbook for R
+#http://www.cookbook-r.com/Graphs/Multiple_graphs_on_one_page_(ggplot2)/
+
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+Let's have a look at the distribution of data per classe for some of the variables
+
+```{r echo=TRUE, message=FALSE, fig.width = 14, fig.height = 16}
+ get_plotX <- function(vv) {
+    p <- ggplot(trainset, aes_string(x=vv, colour="classe")) + geom_density() 
+    p         
+ }
+
+multiplot(
+    get_plotX("roll_belt"), get_plotX("pitch_belt"), get_plotX("yaw_belt"), 
+    get_plotX("total_accel_belt"), get_plotX("gyros_belt_y"), get_plotX("magnet_belt_z"),
+    get_plotX("roll_arm"),  get_plotX("pitch_arm"),  get_plotX("yaw_arm"),  
+    get_plotX("total_accel_arm"), get_plotX("gyros_arm_y"), get_plotX("magnet_arm_z"),  
+    get_plotX("roll_forearm"), get_plotX("pitch_forearm"), get_plotX("yaw_forearm"), 
+    get_plotX("total_accel_forearm"), get_plotX("gyros_forearm_y"), get_plotX("magnet_forearm_z"),  
+    get_plotX("roll_dumbbell"), get_plotX("pitch_dumbbell"), get_plotX("yaw_dumbbell"), 
+    get_plotX("total_accel_dumbbell"), get_plotX("gyros_dumbbell_y"), get_plotX("magnet_dumbbell_z"),
+    cols=4
+)    
+```   
+
+The picture reveals that many variables which have good variability and quite a little skew and differ among different values of classes. That says that we have good chances to construct an accurate prediction model.  
+
+__Prediction model selection__
+
+We will be trying to use RandomForest algorithm to construct a prediction model, which unlike single decision trees that are likely to suffer from high variance or high bias, use averaging to find a natural balance between the two extremes.  
+First of all, we will be trying to optimize number of variables randomly sampled (mtry parameter).
+
+```{r}
+trf <- tuneRF(trainset[,-54], trainset[,54], ntreeTry = 100, trace=FALSE, plot=TRUE)
+opt_mtry <- trf[which.min(trf[,2]), 1]
+```
+
+We will be fitting our prediction model with the selected optimal value of mtry=`r opt_mtry`
+
+```{r message=FALSE}
+modFit <- randomForest(
+    classe ~., 
+    data = trainset, 
+    mtry=opt_mtry, replace=FALSE, importance=TRUE
+    )
+print(modFit)
+cmtr <- confusionMatrix(trainset$classe, modFit$predicted)
+```
+
+Statistics for the fitted model on the training data set shows quite low OOB estimate of in-sample error rate, which is `r round((1-cmtr$overall[1])*100, 2)`%.
+
+Matrix of Importance shows first 30 most important variables influencing prediction result.
+```{r fig.width = 6, fig.height = 8}
+  varImpPlot(modFit, type=1,main="Top 30 Important variables")
+```
+
+Plot for the OOB estimate of error per number of trees 
+```{r message=FALSE}
+   plot(modFit, main="OOB estimate of error")
+   legend("topright", legend=unique(trainset$classe), col=unique(as.numeric(trainset$classe)), pch=19)
+```
+
+__Optimization__
+
+We will be trying to re-build our model using the reduced number of fields, by selecting the those with importance > 30
+
+```{r}
+  trainset1 <- trainset[,which(importance(modFit)[,6] > 30)]
+  modFit1 <- randomForest(x = trainset1, y = trainset[, 54], replace = FALSE,importance = TRUE) 
+```
+
+Let's estimate out-of-sample error for our model on the testing data set. 
+```{r}
+cmts <- confusionMatrix(testset$classe, predict(modFit1, newdata=testset))
+cmts
+```
+For our predicted model with reduced number of predictors, the out-of-sample estimated error = 1-Accuracy is equal to `r round((1-cmts$overall[1])*100, 2)`% and is quite small. 
+
+So, our model very accurately predicts with the reduced number (```r ncol(trainset1)```)  of variables, which are:
+`r names(trainset1)`
+
+### Applying prediction model to the supplied test set
+
+Due to the estimated accuracy of the fitted model above 99% we expect that for the final test sample of 20 records the prediction would be correct.
+
+```{r}
+testing <- read.csv("pml-testing.csv", na.strings = c("NA",""))
+predict(modFit1, newdata=testing[, names(trainset1)])
+```
+
+
+### References
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
+Cited by 2 (Google Scholar) 
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3vRR0r2s2
+
